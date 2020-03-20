@@ -1,0 +1,74 @@
+{
+  "covid_summary" : {
+    "order" : 0,
+    "index_patterns" : [
+      "covid_summary*"
+    ],
+    "settings" : {
+      "index" : {
+        "number_of_replicas" : "0"
+      }
+    },
+    "mappings" : {
+      "_routing" : {
+        "required" : false
+      },
+      "numeric_detection" : false,
+      "dynamic_date_formats" : [
+        "strict_date_optional_time",
+        "yyyy/MM/dd HH:mm:ss Z||yyyy/MM/dd Z"
+      ],
+      "_meta" : { },
+      "dynamic" : true,
+      "_source" : {
+        "excludes" : [ ],
+        "includes" : [ ],
+        "enabled" : true
+      },
+      "dynamic_templates" : [ ],
+      "date_detection" : true,
+      "properties" : {
+        "date_data_file": {
+          "type": "date"
+        },
+        "Recovered" : {
+          "type" : "integer"
+        },
+        "Province/State" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "ignore_above" : 256,
+              "type" : "keyword"
+            }
+          }
+        },
+        "Last Update" : {
+          "type" : "date"
+        },
+        "Deaths" : {
+          "type" : "integer"
+        },
+        "Latitude" : {
+          "type" : "keyword"
+        },
+        "Confirmed" : {
+          "type" : "integer"
+        },
+        "Country/Region" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "ignore_above" : 256,
+              "type" : "keyword"
+            }
+          }
+        },
+        "Longitude" : {
+          "type" : "keyword"
+        }
+      }
+    },
+    "aliases" : { }
+  }
+}
