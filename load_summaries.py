@@ -14,7 +14,6 @@ https://www.arcgis.com/apps/opsdashboard/index.html#/bda7594740fd40299423467b48e
 import argparse
 import csv
 from datetime import datetime
-import json
 import os
 from os import listdir
 from os.path import isfile, join
@@ -24,6 +23,7 @@ from elasticsearch import Elasticsearch, helpers
 import dateutil.parser as dparser
 
 # local project modules
+from utils import console_dump
 
 ES = Elasticsearch()
 DEFAULT_INDEX = 'covid_summary'
@@ -94,18 +94,6 @@ class SummaryDocGenerator:
                 #  yyyy-MM-dd (strict_date_optional_time)
             doc = {"_index": index_name, "_source": row}
             yield doc
-
-
-def console_dump(es_client, doc_generator):
-    """
-    Helper function to send documents to the console instead of Elasticsearch.
-    Signature must match signature of ES.helper.bulk, so has an unused param.
-    :param es_client: Unused Elasticsearch client
-    :param doc_generator: Document iterable
-    :return:
-    """
-    for doc in doc_generator:
-        print(json.dumps(doc))
 
 
 def process_summary_file(
