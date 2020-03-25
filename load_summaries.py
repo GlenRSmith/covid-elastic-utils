@@ -11,58 +11,73 @@ https://www.arcgis.com/apps/opsdashboard/index.html#/bda7594740fd40299423467b48e
 """
 
 # core library modules
-import argparse
-import csv
-from datetime import datetime
-import os
-from os import listdir
-from os.path import isfile, join
+import difflib
+import json
 
 # third party packages
-from elasticsearch import Elasticsearch, helpers
 import dateutil.parser as dparser
 
 # local project modules
-from utils import console_dump
 
-ES = Elasticsearch()
 DEFAULT_INDEX = 'covid_summary'
+DEFAULT_FILE_ENCODING = 'utf-8'
 
 
-def scan_directory(pth):
-    """
-    List all the data files in the data path
-    :return:
-    """
-    entries = {}
-    for entry in listdir(pth):
-        if isfile(join(pth, entry)) and 'csv' in entry:
-            entries[entry] = dparser.parse(
-                entry, fuzzy=True, dayfirst=False
-            ).date().strftime("%Y-%m-%d")
-    #  yyyy-MM-dd (strict_date_optional_time)
-    return entries
+class SummaryConf(object):
+
+    # prepopulate with known alts
+    field_match_map = {
+        "\ufeffProvince/State": "Province/State",
+        "Province_State": "Province/State",
+        "Country_Region": "Country/Region",
+        "Last_Update": "Last Update",
+        "Lat": "Latitude", "Long_": "Longitude"
+    }
+
+    def __init__(self):
+        with open('config/covid_summary_template.json') as conf_file:
+            conf = json.loads(conf_file.read())
+            self.conf = conf['covid_summary']
+        for field in self.conf['mappings']['properties'].keys():
+            self.field_match_map[field] = field
+
+    def get_fields(self):
+        return self.conf['mappings']['properties'].keys()
+
+    def add_field_match(self, new_label, original_label):
+        print("adding new match {0} for {1}".format(
+            new_label, original_label
+        ))
+        self.field_match_map[new_label] = original_label
+        print("field_match_map is now {}".format(json.dumps(
+            self.field_match_map
+        )))
+
+    def find_field_name(self, match):
+        ret_val = self.field_match_map.get(match, None)
+        if not ret_val:
+            for co in [1, 0.8, 0.6]:
+                match_list = difflib.get_close_matches(
+                    match, self.get_fields(), 1, cutoff=co
+                )
+                if not match_list:
+                    print("no match for {0}, cutoff {1}".format(match, co))
+                    continue
+                else:
+                    ret_val = match_list[0]
+                    self.add_field_match(match, ret_val)
+                    print(
+                        "match for {0} cutoff {1} is {2}".format(
+                            match, co, ret_val
+                        )
+                    )
+                    break
+        if not ret_val:
+            raise ValueError("never found a match for {0}".format(match))
+        return ret_val
 
 
-def get_latest_file(directory):
-    """
-    Given a directory of summary report data files, return the name
-    of the file with the most recent apparent date in the name.
-    :param directory: Directory on local filesystem to scan
-    :return:
-    """
-    latest = None
-    latest_name = ''
-    for file in [f for f in os.listdir(directory) if f.endswith('.csv')]:
-        name = os.path.splitext(file)[0]
-        dt = datetime.strptime(name, '%m-%d-%Y')
-        if not latest or dt > latest:
-            latest = dt
-            latest_name = file
-    return latest_name
-
-
-class SummaryDocGenerator:
+class DocGenerator:
     """
     Generator class for summary report documents from a file.
     Class implementation so filename can be retained between documents
@@ -86,84 +101,23 @@ class SummaryDocGenerator:
             row['date_data_file'] = dparser.parse(
                 self.filename, fuzzy=True, dayfirst=False
             ).date().strftime("%Y-%m-%d")
+            # Deal with slight changes to field names from upstream
+            doc = {}
+            mapper = SummaryConf()
+            for field in row:
+                doc[mapper.find_field_name(field)] = row[field]
             # change the format of date fields for ES recognition
             for field in ['Last Update']:
-                row[field] = dparser.parse(
-                    row[field], fuzzy=True, dayfirst=False
-                ).date().strftime("%Y-%m-%d")
-                #  yyyy-MM-dd (strict_date_optional_time)
-            doc = {"_index": index_name, "_source": row}
-            yield doc
-
-
-def process_summary_file(
-        output_handler,
-        data_path,
-        file_name=None,
-        encoding="utf-8",
-        index=DEFAULT_INDEX
-):
-    """
-    Function to open and process a file of CSV summary reports
-    """
-    if not file_name:
-        file_name = get_latest_file(data_path)
-    sdg = SummaryDocGenerator(filename=file_name)
-    target = join(data_path, file_name)
-    with open(target, encoding=encoding) as csv_read:
-        csv_reader = csv.DictReader(csv_read)
-        output_handler(ES, sdg.generate(csv_reader, index))
-    return
-
-
-def process_all_summary_files(output_handler, data_path, index=DEFAULT_INDEX):
-    """
-    """
-    file_map = scan_directory(data_path)
-    for name in file_map:
-        process_summary_file(
-            output_handler, data_path, file_name=name, index=index
-        )
-    return
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description='Index COVID report data to Elasticsearch.',
-        prog="load_summaries.py"
-    )
-    parser.add_argument(
-        'data_path', type=str, help="directory path of summary report files"
-    )
-    which_files_group = parser.add_mutually_exclusive_group()
-    which_files_group.add_argument(
-        '--all', dest="all", action="store_true",
-        help="process all files in the directory"
-    )
-    which_files_group.add_argument(
-        '--files', type=str, nargs='*', dest='files',
-        help="list of specific files to process"
-    )
-    target_group = parser.add_mutually_exclusive_group()
-    target_group.add_argument(
-        '--console', dest='console', action='store_true',
-        help="send documents to console instead of Elasticsearch"
-    )
-    target_group.add_argument(
-        '--index', type=str, dest='index', default=DEFAULT_INDEX,
-        help="name of Elasticsearch index for documents"
-    )
-    args = parser.parse_args()
-    if args.console:
-        handler = console_dump
-    else:
-        handler = helpers.bulk
-    if args.all:
-        process_all_summary_files(handler, args.data_path, index=args.index)
-    elif args.files:
-        for file in args.files:
-            process_summary_file(
-                handler, args.data_path, file, index=args.index
-            )
-    else:
-        process_summary_file(handler, args.data_path)
+                try:
+                    doc[field] = dparser.parse(
+                        doc[field], fuzzy=True, dayfirst=False
+                    ).date().strftime("%Y-%m-%d")
+                    #  yyyy-MM-dd (strict_date_optional_time)
+                except KeyError as err:
+                    print("KeyError: {}".format(err))
+                    print(doc)
+                except Exception as err:
+                    print("Exception: {}".format(err))
+                    print(err)
+                    print(doc)
+            yield {"_index": index_name, "_source": doc}
