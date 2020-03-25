@@ -31,6 +31,30 @@
         "date_data_file": {
           "type": "date"
         },
+        "FIPS" : {
+          "type" : "keyword"
+        },
+        "Active" : {
+          "type" : "keyword"
+        },
+        "Admin2" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "ignore_above" : 256,
+              "type" : "keyword"
+            }
+          }
+        },
+        "Combined_Key" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "ignore_above" : 256,
+              "type" : "keyword"
+            }
+          }
+        },
         "Recovered" : {
           "type" : "integer"
         },
